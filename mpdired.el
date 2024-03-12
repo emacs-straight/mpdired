@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2024  Free Software Foundation, Inc.
 
-;; Version: 1-pre
+;; Version: 1
 ;; Package-Requires: ((emacs "29"))
 
 ;; Author: Manuel Giraud <manuel@ledu-giraud.fr>
@@ -31,7 +31,8 @@
 ;;
 ;; In those view, most of the interactions are mimic after Dired mode
 ;; with marks and action on them.  For example, in the queue view, you
-;; could flag songs for removal with `d' and then execute with `x'.
+;; could flag songs for removal with `d' and then issue the deletion
+;; from the queue with `x'.
 ;;
 ;; MPDired connects to a MPD server using two customs: `mpdired-host'
 ;; and `mpdired-port'.  Once connected, the handle to the server is
@@ -56,10 +57,10 @@
 ;; filenames, I prefer to use this interface rather then to rely on
 ;; files' tags.
 ;;
-;; If your music collection consists of just a set of not very well
-;; named files into one big directory and that you rely on tags such
-;; as "Genre", "Album", "Artist" to find your way through it then,
-;; maybe, MPDired is not the right client for you.
+;; Be aware that if your music collection consists of just a set of
+;; not very well named files into one big directory and that you rely
+;; on tags such as "Genre", "Album", "Artist" to find your way through
+;; it then, maybe, MPDired is not the right client for you.
 
 ;;; Bugs & Funs:
 ;;
@@ -218,8 +219,8 @@
   ;; works with `mpdired--subdir-p'.
   (mpdired--parse-listall-1 "" (list "")))
 
-;; All my functions are called *-queue but they are using the correct
-;; "playlistid" MPD interface.
+;; All functions dealing with the queue are called *-queue but they
+;; are using the correct "playlistid" MPD interface.
 (defun mpdired--parse-queue ()
   ;; Called from the communication buffer.
   (goto-char (point-min))
@@ -257,7 +258,7 @@
 		  duration (string-to-number (match-string 2)))))
 	;; When we enconter our first "file:" the status parsing is
 	;; done so store what we've discovered so far and do not try
-	;; to parse status anymore.
+	;; to parse the status anymore.
 	(when (and in-status-p
 		   (save-excursion (re-search-forward "^file: .*$" eol t 1)))
 	  (setq in-status-p nil)
@@ -284,7 +285,7 @@
 	(when (re-search-forward "^Id: \\(.*\\)$" eol t 1)
 	  (setq id (string-to-number (match-string 1)))))
       (forward-line))
-    ;; There was only status but no songs
+    ;; There was only a status but no songs
     (when in-status-p
       ;; Save status in main buffer
       (with-current-buffer mpdired--main-buffer
@@ -297,13 +298,10 @@
     (when file (push (list id file time) result))
     (reverse result)))
 
-(defun mpdired-mode ()
+(define-derived-mode mpdired-mode special-mode "MPDired"
   "Major mode for MPDired."
-  (use-local-map mpdired-mode-map)
   (set-buffer-modified-p nil)
-  (setq major-mode 'mpdired-mode
-	mode-name "MPDired"
-	truncate-lines t
+  (setq truncate-lines t
 	buffer-read-only t))
 
 (defun mpdired--hostname (host service localp)
@@ -423,12 +421,11 @@ used for mark followed by a space."
     (insert "\n")))
 
 (defun mpdired--goto-id (songid)
-  (let ((max (point-max)))
-    (while (and (< (point) max)
-		(let ((id (get-text-property (mpdired--bol) 'id)))
-		  (or (null id)
-		      (and id (/= songid id)))))
-      (mpdired--next-line))))
+  (while (and (not (eobp))
+	      (let ((id (get-text-property (mpdired--bol) 'id)))
+		(or (null id)
+		    (and id (/= songid id)))))
+    (mpdired--next-line)))
 
 (defun mpdired--present-list (proc)
   ;; Called by filter of the communication buffer.
@@ -443,7 +440,7 @@ used for mark followed by a space."
     (with-current-buffer (process-buffer proc)
       (setq ascending-p mpdired--ascending-p
 	    playlist mpdired--playlist))
-    (with-current-buffer (get-buffer-create main-buffer)
+    (with-current-buffer main-buffer
       (let* ((inhibit-read-only t)
 	     ;; `content' is always of the form ("" rest...) so if
 	     ;; there is only one element in rest use it as content.
@@ -458,8 +455,7 @@ used for mark followed by a space."
 	  (when (stringp top)
 	    (insert (propertize top 'face 'mpdired-currdir) ":\n"))
 	  (mapc #'mpdired--insert-entry data))
-	;; Set mode and memorize stuff
-	(mpdired-mode)
+	;; Memorize stuff
 	(if ascending-p (setq from mpdired--directory))
 	(setq mpdired--directory (when top top)
 	      mpdired--comm-buffer (process-buffer proc)
@@ -467,12 +463,11 @@ used for mark followed by a space."
 	;; Finally move point to the correct place.
 	(cond ((and ascending-p from)
 	       (goto-char (point-min))
-	       (let ((max (point-max)))
-		 (while (and (< (point) max)
-			     (let ((uri (get-text-property (mpdired--bol) 'uri)))
-			       (or (null uri)
-				   (and uri (not (string= from uri))))))
-		   (forward-line)))
+	       (while (and (not (eobp))
+			   (let ((uri (get-text-property (mpdired--bol) 'uri)))
+			     (or (null uri)
+				 (and uri (not (string= from uri))))))
+		 (forward-line))
 	       (goto-char (mpdired--bol))
 	       (setq mpdired--browser-point (point)))
 	      (mpdired--browser-point
@@ -495,7 +490,7 @@ used for mark followed by a space."
 	 (elapsed (cadr data))
 	 (duration (caddr data))
 	 (songs (cdddr data)))
-    (with-current-buffer (get-buffer-create main-buffer)
+    (with-current-buffer main-buffer
       (let ((inhibit-read-only t))
 	(erase-buffer)
 	;; Insert content
@@ -508,20 +503,19 @@ used for mark followed by a space."
 	;; different face on its URI.
 	(save-excursion
 	  (when songid
-	    (let ((max (point-max)))
-	      (while (and (< (point) max)
-			  (let ((id (get-text-property (mpdired--bol) 'id)))
-			    (or (null id)
-				(and id (/= songid id)))))
-		(forward-line)))
+	    (while (and (not (eobp))
+			(let ((id (get-text-property (mpdired--bol) 'id)))
+			  (or (null id)
+			      (and id (/= songid id)))))
+	      (forward-line))
 	    (let* ((bol (mpdired--bol))
 		   (eol (line-end-position))
 		   (x (/ (* elapsed (- eol bol)) duration)))
-	      (put-text-property (+ bol x) eol 'face 'mpdired-progress))))
+	      (when (> eol (+ bol x))
+		(put-text-property (+ bol x) eol 'face 'mpdired-progress)))))
 	;; Go to bol no matter what
 	(goto-char (mpdired--bol))
-	;; Set mode, restore point and memorize stuff
-	(mpdired-mode)
+	;; Restore point and memorize stuff
 	(when mpdired--songid-point
 	  (mpdired--goto-id mpdired--songid-point))
 	(setq mpdired--comm-buffer (process-buffer proc)
@@ -593,10 +587,15 @@ used for mark followed by a space."
 			    :family (if localp 'local)
 			    :coding 'utf-8
 			    :filter #'mpdired--filter)))
+	  ;; Save communication buffer's state and set its process.
 	  (setq mpdired--network-params params
 		mpdired--main-buffer (mpdired--main-name host service localp))
 	  (set-process-buffer (apply 'make-network-process params)
-			      (current-buffer)))))))
+			      (current-buffer))))
+      ;; Set mode in main buffer if it does not already exist.
+      (unless (get-buffer mpdired--main-buffer)
+	(with-current-buffer (get-buffer-create mpdired--main-buffer)
+	  (mpdired-mode))))))
 
 (defmacro mpdired--with-comm-buffer (process buffer &rest body)
   "Helper macro when sending a command via the communication buffer.
@@ -929,13 +928,12 @@ SEPARATOR string."
   (interactive)
   (save-excursion
     (goto-char (point-min))
-    (let ((max (point-max)))
-      (while (< (point) max)
-	(let ((mark (get-text-property (mpdired--bol) 'mark)))
-	  (if (and mark (char-equal mark ?*))
-	      (mpdired--clear-mark)
-	    (mpdired--mark ?*)))
-	(forward-line)))))
+    (while (not (eobp))
+      (let ((mark (get-text-property (mpdired--bol) 'mark)))
+	(if (and mark (char-equal mark ?*))
+	    (mpdired--clear-mark)
+	  (mpdired--mark ?*)))
+      (forward-line))))
 
 (defun mpdired-change-marks (&optional old new)
   "Changes mark from OLD to NEW.  It asks the user for OLD and NEW."
@@ -947,12 +945,11 @@ SEPARATOR string."
   (let ((inhibit-read-only t))
     (save-excursion
       (goto-char (point-min))
-      (let ((max (point-max)))
-	(while (< (point) max)
-	  (let ((mark (get-text-property (mpdired--bol) 'mark)))
-	    (when (and mark (char-equal mark old))
-	      (mpdired--mark new)))
-	  (forward-line))))))
+      (while (not (eobp))
+	(let ((mark (get-text-property (mpdired--bol) 'mark)))
+	  (when (and mark (char-equal mark old))
+	    (mpdired--mark new)))
+	(forward-line)))))
 
 (defun mpdired-unmark-at-point ()
   "Removes any mark at point."
@@ -972,18 +969,16 @@ SEPARATOR string."
   (let ((inhibit-read-only t))
     (save-excursion
       (goto-char (point-min))
-      (let ((max (point-max)))
-	(while (< (point) max)
-	  (mpdired--clear-mark)
-	  (forward-line))))))
+      (while (not (eobp))
+	(mpdired--clear-mark)
+	(forward-line)))))
 
 (defun mpdired--collect-marked (want)
   "Collects entries marked with WANT."
-  (let ((max (point-max))
-	result)
+  (let (result)
     (save-excursion
       (goto-char (point-min))
-      (while (< (point) max)
+      (while (not (eobp))
 	(let* ((bol (mpdired--bol))
 	       (mark (get-text-property bol 'mark))
 	       (id (get-text-property bol 'id))
@@ -1006,9 +1001,8 @@ SEPARATOR string."
   (interactive (list (read-regexp "Mark (regexp): ")))
   (save-excursion
     (goto-char (point-min))
-    (let ((mark (or mark ?*))
-	  (max (point-max)))
-      (while (< (point) max)
+    (let ((mark (or mark ?*)))
+      (while (not (eobp))
 	(when (re-search-forward regexp (line-end-position) t)
 	  (mpdired--mark mark))
 	(forward-line)))))
@@ -1077,12 +1071,11 @@ browser view."
 
 (defun mpdired--find-next-unmarked-id ()
   (save-excursion
-    (let ((max (point-max)))
-      (while (and (< (point) max)
-		  (get-text-property (mpdired--bol) 'mark))
-	(forward-line))
-      (unless (>= (mpdired--bol) max)
-	(get-text-property (mpdired--bol) 'id)))))
+    (while (and (not (eobp))
+		(get-text-property (mpdired--bol) 'mark))
+      (forward-line))
+    (unless (eobp)
+      (get-text-property (mpdired--bol) 'id))))
 
 (defun mpdired-flagged-delete ()
   "Removes flagged songs from the queue."
