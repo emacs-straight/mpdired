@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2024  Free Software Foundation, Inc.
 
-;; Version: 1
+;; Version: 2-pre
 ;; Package-Requires: ((emacs "29"))
 
 ;; Author: Manuel Giraud <manuel@ledu-giraud.fr>
@@ -29,18 +29,29 @@
 ;; inspired from Dired.  It features two views packed into the same
 ;; interactive buffer: the browser view and the queue view.
 ;;
-;; In those view, most of the interactions are mimic after Dired mode
+;; In those views, most of the interactions are mimic after Dired mode
 ;; with marks and action on them.  For example, in the queue view, you
 ;; could flag songs for removal with `d' and then issue the deletion
-;; from the queue with `x'.
+;; from the queue with `x'.  In the browser view, you could mark songs
+;; or directories with `m' and then append them to the queue with `a'.
+
+;;;; Usage:
+;;
+;; Just do "M-x mpdired".  It will pop you to a MPDired buffer in the
+;; queue view by default.  To navigate between the queue view and the
+;; browser view hit `o'.
 ;;
 ;; MPDired connects to a MPD server using two customs: `mpdired-host'
-;; and `mpdired-port'.  Once connected, the handle to the server is
-;; saved in a buffer local variable into the MPDired buffer.  From now
-;; on, the customs are just used by global MPDired commands to connect
-;; to the user defined server.  All commands used inside a MPDired
-;; buffer will connect to the buffer local server.  This way, you can
-;; manage more than one MPD server with multiple MPDired buffers.
+;; and `mpdired-port'.  Those customs defaults to your MPD_HOST and
+;; MPD_PORT environment variables or to "localhost" and 6600 if these
+;; are not set.
+;;
+;; Once connected, the handle to the server is saved in a buffer local
+;; variable into the MPDired buffer.  From now on, the customs are
+;; just used by global MPDired commands to connect to the user defined
+;; server.  All commands used inside a MPDired buffer will connect to
+;; the buffer local server.  This way, you can manage more than one
+;; MPD server with multiple MPDired buffers.
 
 ;;;; Philosophy:
 ;;
@@ -174,6 +185,9 @@
   (let ((pos (string-search dir-a dir-b)))
     (and pos (zerop pos))))
 
+(defvar mpdired--eot "^\\(OK\\|ACK.*\\)$"
+  "Regexp for end of transmission of a MPD command.")
+
 (defun mpdired--parse-listall-1 (current accum)
   ;; Recursively rebuild the directory hierarchy from a "listall"
   ;; command into a list.  In the output, a directory is list which
@@ -183,7 +197,7 @@
   (catch 'exit
     (while (not (or mpdired--parse-endp
 		    (setq mpdired--parse-endp
-			  (re-search-forward "^\\(OK\\|ACK.*\\)$"
+			  (re-search-forward mpdired--eot
 					     (line-end-position) t 1))))
       ;; Look for file, playlist or directory line by line.
       (when
@@ -224,17 +238,13 @@
 (defun mpdired--parse-queue ()
   ;; Called from the communication buffer.
   (goto-char (point-min))
-  (setq mpdired--parse-endp nil)
   (let ((elapsed 0)
 	(duration 1)
 	(songid 0)
 	(in-status-p t)
 	state volume repeat random single consume
 	result file time id)
-    (while (not (or mpdired--parse-endp
-		    (setq mpdired--parse-endp
-			  (re-search-forward "^\\(OK\\|ACK.*\\)$"
-					     (line-end-position) t 1))))
+    (while (not (re-search-forward mpdired--eot (line-end-position) t 1))
       (let ((eol (line-end-position)))
         ;; First, "status" content
 	(when in-status-p
