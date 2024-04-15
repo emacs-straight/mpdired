@@ -38,7 +38,7 @@
 ;;;; Usage:
 ;;
 ;; Just do "M-x mpdired".  It will pop you to a MPDired buffer in the
-;; queue view by default.  To navigate between the queue view and the
+;; queue view by default.  To alternate between the queue view and the
 ;; browser view hit `o'.
 ;;
 ;; MPDired connects to a MPD server using two customs: `mpdired-host'
@@ -342,7 +342,7 @@
   "Local copy of the current song state.  It is a list of form '(songid
 elapsed duration).")
 (defvar-local mpdired--error nil)
-(defvar-local mpdired--order-index 0)
+(defvar-local mpdired--order-index ?0)
 
 ;; I have tried to use markers here but since I often erase the
 ;; buffer's content, these markers are reset to 1.
@@ -362,31 +362,32 @@ used for mark followed by a space."
       string))
 
 (defun mpdired--reset-face ()
-  (let* ((bol (mpdired--bol))
-	 (eol (line-end-position))
-	 (type (get-text-property bol 'type))
-	 (mark (get-text-property bol 'mark)))
-    (remove-text-properties bol eol '(face))
-    (cond ((and mark (char-equal mark ?D))
-	   (put-text-property bol eol 'face 'mpdired-flagged))
-	  ((and mark (char-equal mark ?*))
-	   (put-text-property bol eol 'face 'mpdired-marked))
-	  ((eq type 'directory)
-	   (put-text-property bol eol 'face 'mpdired-directory))
-	  ((eq type 'playlist)
-	   (put-text-property bol eol 'face 'mpdired-playlist))
-	  ((eq type 'song)
-	   (put-text-property bol eol 'face 'mpdired-song)
-	   ;; Add "progress bar" back
-	   (when mpdired--song
-	     (let* ((currid (get-text-property bol 'id))
-		    (songid (car mpdired--song))
-		    (elapsed (cadr mpdired--song))
-		    (duration (caddr mpdired--song))
-		    (x (/ (* elapsed (- eol bol)) duration)))
-	       (when (and (= currid songid) (> eol (+ bol x)))
-		 (put-text-property (+ bol x) eol 'face 'mpdired-progress))))))
-    (set-buffer-modified-p nil)))
+  (let ((bol (mpdired--bol)))
+    (unless (>= bol (point-max))
+      (let ((eol (line-end-position))
+	    (type (get-text-property bol 'type))
+	    (mark (get-text-property bol 'mark)))
+	(remove-text-properties bol eol '(face))
+	(cond ((and mark (= mark ?D))
+	       (put-text-property bol eol 'face 'mpdired-flagged))
+	      ((and mark (= mark ?*))
+	       (put-text-property bol eol 'face 'mpdired-marked))
+	      ((eq type 'directory)
+	       (put-text-property bol eol 'face 'mpdired-directory))
+	      ((eq type 'playlist)
+	       (put-text-property bol eol 'face 'mpdired-playlist))
+	      ((eq type 'song)
+	       (put-text-property bol eol 'face 'mpdired-song)
+	       ;; Add "progress bar" back
+	       (when mpdired--song
+		 (let* ((currid (get-text-property bol 'id))
+			(songid (car mpdired--song))
+			(elapsed (cadr mpdired--song))
+			(duration (caddr mpdired--song))
+			(x (/ (* elapsed (- eol bol)) duration)))
+		   (when (and (= currid songid) (> eol (+ bol x)))
+		     (put-text-property (+ bol x) eol 'face 'mpdired-progress))))))
+	(set-buffer-modified-p nil)))))
 
 (defun mpdired--insert-entry (entry)
   "Insert ENTRY in MPDired browser view."
@@ -571,13 +572,13 @@ used for mark followed by a space."
 			(setq mpdired--error 'no-playlist)))
 		     (t (message (match-string 1)))))
 	      ((re-search-backward "^OK$" nil t)
-	       ;; Present results in the main buffer
+	       ;; Present results in the main buffer.  It depends on
+	       ;; what was the last command.
 	       (cond ((or (eq mpdired--last-command 'listall)
 			  (eq mpdired--last-command 'listplaylist))
 		      (mpdired--present-list proc))
 		     ((or (eq mpdired--last-command 'queue)
-			  (eq mpdired--last-command 'deleteid)
-			  (eq mpdired--last-command 'moveid))
+			  (eq mpdired--last-command 'delete-or-move))
 		      (mpdired--present-queue proc)))
 	       ;; Display and reset information message.
 	       (when mpdired--message
@@ -683,29 +684,20 @@ an optional communication buffer that would be used instead of
       (process-send-string process (format "add %S\n" typed-uris)))
     (process-send-string process "command_list_end\n")))
 
-(defun mpdired-deleteid-internal (id)
+(defun mpdired-delete-or-move-internal (flagged ordered)
   (mpdired--with-comm-buffer process nil
-    (setq mpdired--last-command 'deleteid)
+    (setq mpdired--last-command 'delete-or-move)
     (process-send-string process "command_list_begin\n")
-    (if (listp id)
-	(dolist (i id)
+    (if (listp flagged)
+	(dolist (i flagged)
 	  (process-send-string process (format "deleteid %d\n" i)))
-      (process-send-string process (format "deleteid %d\n" id)))
-    ;; XXX A playlistid should always be preceded by a status
-    (process-send-string process "status\n")
-    (process-send-string process "playlistid\n")
-    (process-send-string process "command_list_end\n")))
-
-(defun mpdired-moveid-internal (id)
-  (mpdired--with-comm-buffer process nil
-    (setq mpdired--last-command 'moveid)
-    (process-send-string process "command_list_begin\n")
-    (if (listp id)
+      (process-send-string process (format "deleteid %d\n" flagged)))
+    (if (listp ordered)
 	(let ((place 0))
-	  (dolist (i id)
+	  (dolist (i ordered)
 	    (process-send-string process (format "moveid %d %d\n" i place))
 	    (setq place (1+ place))))
-      (process-send-string process (format "moveid %d 0\n" id)))
+      (process-send-string process (format "moveid %d 0\n" ordered)))
     ;; XXX A playlistid should always be preceded by a status
     (process-send-string process "status\n")
     (process-send-string process "playlistid\n")
@@ -829,7 +821,7 @@ an optional communication buffer that would be used instead of
 (defun mpdired--save-point ()
   (cond ((eq mpdired--view 'queue)
 	 (let ((bol (mpdired--bol)))
-	   (unless (> bol (point-max))
+	   (unless (>= bol (point-max))
 	     (setf mpdired--songid-point (get-text-property bol 'id)))))
 	((eq mpdired--view 'browser)
 	 (setf mpdired--browser-point (point)))))
@@ -855,19 +847,22 @@ an optional communication buffer that would be used instead of
   (mpdired--save-point))
 
 (defun mpdired-listall-at-point ()
-  (let* ((bol (mpdired--bol))
-	 (type (get-text-property bol 'type))
-	 (uri (get-text-property bol 'uri)))
-    (cond ((eq type 'directory)
-	   (mpdired-listall-internal uri))
-	  ((eq type 'playlist)
-	   (mpdired-listplaylist-internal uri))
-	  ((eq type 'file)
-	   (message "Cannot browse a file.")))))
+  (let ((bol (mpdired--bol)))
+    (unless (>= bol (point-max))
+      (let ((type (get-text-property bol 'type))
+	    (uri (get-text-property bol 'uri)))
+	(cond ((eq type 'directory)
+	       (mpdired-listall-internal uri))
+	      ((eq type 'playlist)
+	       (mpdired-listplaylist-internal uri))
+	      ((eq type 'file)
+	       (message "Cannot browse a file.")))))))
 
 (defun mpdired-playid-at-point ()
-  (let ((id (get-text-property (mpdired--bol) 'id)))
-    (when id (mpdired-playid-internal id))))
+  (let ((bol (mpdired--bol)))
+    (unless (>= bol (point-max))
+      (let ((id (get-text-property bol 'id)))
+	(when id (mpdired-playid-internal id))))))
 
 (defun mpdired-enter ()
   "In the browser view, browses the entry at point.
@@ -943,6 +938,8 @@ SEPARATOR string."
 	       (t (mpdired-listall-internal ""))))))
 
 (defun mpdired--mark (mark)
+  "Marks current entry with MARK.  Returns t if the mark is done and nil
+otherwise."
   (let ((inhibit-read-only t))
     (when (and (not (eobp)) (get-text-property (mpdired--bol) 'uri))
       (save-excursion
@@ -950,7 +947,8 @@ SEPARATOR string."
 	(delete-char 1)
 	(insert-char mark))
       (put-text-property (mpdired--bol) (line-end-position) 'mark mark)
-      (mpdired--reset-face))))
+      (mpdired--reset-face)
+      t)))
 
 (defun mpdired--clear-mark ()
   (let ((inhibit-read-only t)
@@ -976,16 +974,22 @@ SEPARATOR string."
   (mpdired--mark ?D)
   (mpdired-next-line))
 
+(defun mpdired--increment-char (char)
+  "Modular increment CHAR from in a 0-9a-z space."
+  (cond ((or (= char ?z) (< char ?0)) ?0)
+	((= char ?9) ?a)
+	(t (1+ char))))
+
 (defun mpdired-put-order-at-point ()
   (interactive)
   (when (eq mpdired--view 'queue)
-    (mpdired--mark (elt (number-to-string mpdired--order-index) 0))
-    (setq mpdired--order-index (mod (1+ mpdired--order-index) 10))
-    (mpdired-next-line)))
+    (when (mpdired--mark mpdired--order-index)
+      (setq mpdired--order-index (mpdired--increment-char mpdired--order-index))
+      (mpdired-next-line))))
 
 (defun mpdired-reset-order-index ()
   (interactive)
-  (setq mpdired--order-index 0))
+  (setq mpdired--order-index ?0))
 
 (defun mpdired-toggle-marks ()
   "Toggles marks."
@@ -994,7 +998,7 @@ SEPARATOR string."
     (goto-char (point-min))
     (while (not (eobp))
       (let ((mark (get-text-property (mpdired--bol) 'mark)))
-	(if (and mark (char-equal mark ?*))
+	(if (and mark (= mark ?*))
 	    (mpdired--clear-mark)
 	  (unless mark (mpdired--mark ?*))))
       (forward-line))))
@@ -1011,7 +1015,7 @@ SEPARATOR string."
       (goto-char (point-min))
       (while (not (eobp))
 	(let ((mark (get-text-property (mpdired--bol) 'mark)))
-	  (when (and mark (char-equal mark old))
+	  (when (and mark (= mark old))
 	    (mpdired--mark new)))
 	(forward-line)))))
 
@@ -1048,12 +1052,11 @@ SEPARATOR string."
 	       (id (get-text-property bol 'id))
 	       (type (get-text-property bol 'type))
 	       (uri (get-text-property bol 'uri)))
-	  (when (and mark (char-equal mark want))
+	  (when (and mark (= mark want))
 	    (push (cons id (cons type uri)) result)))
 	(forward-line)))
     ;; No marked, get the entry at point except for the deletion flag.
-    (unless (or result
-		(char-equal want ?D))
+    (unless (or result (= want ?D))
       (let* ((bol (mpdired--bol))
 	     (id (get-text-property bol 'id))
 	     (type (get-text-property bol 'type))
@@ -1072,7 +1075,7 @@ SEPARATOR string."
 	       (id (get-text-property bol 'id))
 	       (type (get-text-property bol 'type))
 	       (uri (get-text-property bol 'uri)))
-	  (when (and mark (seq-position "0123456789" mark))
+	  (when (and mark (seq-position "0123456789abcdefghijklmnopqrstuvwxyz" mark))
 	    (push (cons mark id) result)))
 	(forward-line)))
     (seq-sort #'(lambda (a b) (< (car a) (car b))) result)))
@@ -1121,32 +1124,35 @@ SEPARATOR string."
       (when (= 1 (length typed-uris))
 	(mpdired-next-line)))))
 
-(defun mpdired-deleteid-at-point ()
-  (let ((id (get-text-property (mpdired--bol) 'id)))
-    (when id
-      (save-excursion
-	(forward-line)
-	(let ((bol (mpdired--bol)))
-	  (unless (>= bol (point-max))
-	    (setq mpdired--songid-point
-		  (get-text-property bol 'id)))))
-      (mpdired-deleteid-internal id))))
+(defun mpdired-delete-at-point ()
+  (let ((bol (mpdired--bol)))
+    (unless (>= bol (point-max))
+      (let ((id (get-text-property bol 'id)))
+	(when id
+	  (save-excursion
+	    (forward-line)
+	    (let ((bol (mpdired--bol)))
+	      (unless (>= bol (point-max))
+		(setq mpdired--songid-point
+		      (get-text-property bol 'id)))))
+	  (mpdired-delete-or-move-internal id nil))))))
 
 (defun mpdired-remove-playlist-at-point ()
-  (let* ((bol (mpdired--bol))
-	 (uri (get-text-property bol 'uri))
-	 (type (get-text-property bol 'type)))
-    (when (and type uri
-	       (eq type 'playlist))
-      (mpdired--append-message (format "Removing %S..." uri))
-      (mpdired-remove-playlist-internal uri))))
+  (let ((bol (mpdired--bol)))
+    (unless (>= bol (point-max))
+      (let ((uri (get-text-property bol 'uri))
+	    (type (get-text-property bol 'type)))
+	(when (and type uri
+		   (eq type 'playlist))
+	  (mpdired--append-message (format "Removing %S..." uri))
+	  (mpdired-remove-playlist-internal uri))))))
 
 (defun mpdired-delete ()
   "Removes song at point from the queue or playlist at point from the
 browser view."
   (interactive)
   (cond ((eq mpdired--view 'queue)
-	 (mpdired-deleteid-at-point))
+	 (mpdired-delete-at-point))
 	((eq mpdired--view 'browser)
 	 (mpdired-remove-playlist-at-point))))
 
@@ -1164,13 +1170,9 @@ browser view."
   (when (eq mpdired--view 'queue)
     (let* ((flagged (mapcar 'car (mpdired--collect-marked ?D)))
 	   (ordered (mapcar 'cdr (mpdired--collect-ordered))))
-      ;; First, deletion
       (when flagged
-	(setf mpdired--songid-point (mpdired--find-next-unmarked-id))
-	(mpdired-deleteid-internal flagged))
-      ;; Then, sort songs
-      (when ordered
-	(mpdired-moveid-internal ordered)))))
+	(setf mpdired--songid-point (mpdired--find-next-unmarked-id)))
+      (mpdired-delete-or-move-internal flagged ordered))))
 
 (defun mpdired-update ()
   "Updates the buffer content.  It works both for browser and queue view."
