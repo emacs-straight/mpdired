@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2024  Free Software Foundation, Inc.
 
-;; Version: 2-pre
+;; Version: 2
 ;; Package-Requires: ((emacs "29"))
 
 ;; Author: Manuel Giraud <manuel@ledu-giraud.fr>
@@ -186,8 +186,8 @@
 
 (defun mpdired--subdir-p (dir-a dir-b)
   "Is DIR-B a sub-directory of DIR-A?"
-  (let ((pos (string-search dir-a dir-b)))
-    (and pos (zerop pos))))
+  (or (string-empty-p dir-a)
+      (string-prefix-p (concat dir-a "/") dir-b)))
 
 (defvar mpdired--eot "^\\(OK\\|ACK.*\\)$"
   "Regexp for end of transmission of a MPD command.")
