@@ -1,2 +1,0 @@
-;; Generated package description from mpdired.el  -*- no-byte-compile: t -*-
-(define-package "mpdired" "2.0.20240614.95804" "A dired-like client for Music Player Daemon" '((emacs "29")) :commit "3065192e37cf49e73e8020d001587a0f0d1a953e" :url "https://elpa.gnu.org/packages/mpdired.html" :authors '(("Manuel Giraud" . "manuel@ledu-giraud.fr")) :maintainer '("Manuel Giraud" . "manuel@ledu-giraud.fr") :keywords '("multimedia"))
