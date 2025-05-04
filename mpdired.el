@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2024, 2025 Free Software Foundation, Inc.
 
-;; Version: 3
+;; Version: 4-pre
 ;; Package-Requires: ((emacs "29"))
 
 ;; Author: Manuel Giraud <manuel@ledu-giraud.fr>
@@ -914,7 +914,8 @@ SEPARATOR string."
   (interactive)
   (when mpdired--song
     (goto-char (point-min))
-    (mpdired--goto-id (car mpdired--song))))
+    (mpdired--goto-id (car mpdired--song))
+    (mpdired--save-point)))
 
 (defun mpdired-toggle-view ()
   "Toggles between the browser and the queue view."
