@@ -1,2 +1,2 @@
-;; Generated package description from mpdired.el  -*- mode: lisp-data; no-byte-compile: t -*-
-(define-package "mpdired" "4pre0.20250502.114712" "A dired-like client for Music Player Daemon" '((emacs "29")) :commit "b94fd3df8d4ca636b978db580518c68929e1f8ee" :url "https://elpa.gnu.org/packages/mpdired.html" :authors '(("Manuel Giraud" . "manuel@ledu-giraud.fr")) :maintainer '("Manuel Giraud" . "manuel@ledu-giraud.fr") :keywords '("multimedia"))
+;; Generated package description from mpdired.el  -*- mode: lisp-data; no-byte-compile: t; lexical-binding:t -*-
+(define-package "mpdired" "40.20250502.114712" "A dired-like client for Music Player Daemon" '((emacs "29")) :commit "b94fd3df8d4ca636b978db580518c68929e1f8ee" :url "https://elpa.gnu.org/packages/mpdired.html" :authors '(("Manuel Giraud" . "manuel@ledu-giraud.fr")) :maintainer '("Manuel Giraud" . "manuel@ledu-giraud.fr") :keywords '("multimedia"))
